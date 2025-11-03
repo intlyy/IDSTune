@@ -66,7 +66,7 @@ Load data
 
 Download IMDB Data Set from http://homepages.cwi.nl/~boncz/job/imdb.tgz.
 
-Follow the instructions of https://github.com/winkyao/join-order-benchmark to load data into MySQL.
+Follow the instructions of https://github.com/gregrahn/join-order-benchmark to load data into PostgreSQL.
 
 ### TPCC and TPC-DS
 Follow the instructions of https://www.tpc.org/default5.asp to prepare TPC benchmarks.

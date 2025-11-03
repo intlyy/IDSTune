@@ -72,10 +72,19 @@ Follow the instructions of https://github.com/winkyao/join-order-benchmark to lo
 Follow the instructions of https://www.tpc.org/default5.asp to prepare TPC benchmarks.
 
 ## Quick Start
-1. Modify related settings (e.g., API key, benchmark)
+1. Modify related settings (e.g., API key, benchmark, DB login info)
 2. Execute Phase I: workload compression to obtain selected features.
     ```shell
-    ./workload_compression/get_features.py
+    cd ./workload_compression
+    
+    #Parse the workload to obtain statistical information
+    python WorkloadParser.py
+
+    #Select the most relevant features
+    python get_feature_list.py
+
+    #Extract detailed feature values
+    python get_features.py
    ``` 
 3. Execute Phase II: configuration recommendation to obtain optimal configurations.
     ```shell

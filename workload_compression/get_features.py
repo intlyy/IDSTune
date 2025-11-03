@@ -143,6 +143,7 @@ def extract_features(conn_str):
 
 if __name__ == "__main__":
     conn_str = "dbname= user= password= host= port=5432"
+    task = ["indexes_recommendation", "materialised_views_recommendation", "knob_tuning", "optimization_plan_review"]
     feats = extract_features(conn_str)
-    with open("feats.json", "w", encoding="utf-8") as f:
+    with open("{task}_features.json", "w", encoding="utf-8") as f:
         json.dump(feats, f, ensure_ascii=False, indent=2)

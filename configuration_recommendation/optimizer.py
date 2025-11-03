@@ -3,7 +3,8 @@ import json
 from openai import OpenAI
 from prompt_generator import *
 import  time
-
+from DB_test import *
+from google_search import search_lines
 
 line_limit = 50
 search_mode= "Auto"
@@ -210,6 +211,8 @@ def run_framework(context, max_iters=10):
 
 
 if __name__ == "__main__":
+    benchmark = "TPC-DS"  # TPC-C, TPC-DS, Sysbench, JOB
+    total_time_limit = 3600  # seconds
     start_time = time.time() 
     while True:
       final_plan = run_framework()

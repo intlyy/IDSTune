@@ -1,7 +1,28 @@
-file_path = r"features/features_more_less"
+tasks = [
+    ("indexes_recommendation", "index_context"),
+    ("materialised_views_recommendation", "matview_context"),
+    ("knob_tuning", "knob_context"),
+    ("optimization_plan_review", "review_context")
+]
 
-with open(file_path, "r", encoding="utf-8") as f:
-    content = f.read()
+index_context = matview_context = knob_context = review_context = ""
+
+for task_name, var_name in tasks:
+    file_path = fr"../workload_compression/{task_name}_features.json"
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+            if var_name == "index_context":
+                index_context = content
+            elif var_name == "matview_context":
+                matview_context = content
+            elif var_name == "knob_context":
+                knob_context = content
+            elif var_name == "review_context":
+                review_context = content
+
+    except FileNotFoundError:
+        print(f"File not found for task: {task_name}")
 
 OLAP_environment = """
     - Workload: OLAP, JOB(join-order-benchmark) contains 113 multi-joint queries with realistic and complex joins, Read-Only, execute sequentially .

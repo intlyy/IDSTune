@@ -1,16 +1,15 @@
 import psycopg2
 import json
+from typing import Dict, Any, List, Tuple
 
-def extract_features(conn_str):
-    conn = psycopg2.connect(conn_str)
-    cur = conn.cursor()
 
-    features = {}
+# -----------------------------
+# Task-specific feature extractors
+# -----------------------------
 
-    # -------------------------
-    # 1. Execution Features
-    # -------------------------
-    cur.execute("""
+def _fetch_db_exec_stats(cur) -> Dict[str, Any]:
+    cur.execute(
+        """
         SELECT
             datname,
             xact_commit, xact_rollback,
@@ -18,23 +17,30 @@ def extract_features(conn_str):
             tup_returned, tup_fetched, tup_inserted, tup_updated, tup_deleted
         FROM pg_stat_database
         WHERE datname = current_database();
-    """)
-    db_stat = cur.fetchone()
-    features['execution'] = {
-        'blocks_read': db_stat[3],
-        'blocks_hit': db_stat[4],
-        'tuples_returned': db_stat[5],
-        'tuples_fetched': db_stat[6]
+        """
+    )
+    row = cur.fetchone()
+    if not row:
+        return {}
+    blocks_read = row[3]
+    blocks_hit = row[4]
+    return {
+        'blocks_read': blocks_read,
+        'blocks_hit': blocks_hit,
+        'tuples_returned': row[5],
+        'tuples_fetched': row[6],
+        'tuples_inserted': row[7],
+        'tuples_updated': row[8],
+        'tuples_deleted': row[9],
+        'buffer_pool_hit_ratio': blocks_hit / (blocks_read + blocks_hit + 1e-9),
+        'xact_commit': row[1],
+        'xact_rollback': row[2],
     }
 
-    # Buffer pool hit ratio
-    features['execution']['buffer_pool_hit_ratio'] = \
-        db_stat[4] / (db_stat[3] + db_stat[4] + 1e-9)
 
-    # -------------------------
-    # 2. Schema & Data Features
-    # -------------------------
-    cur.execute("""
+def _fetch_tables(cur) -> List[Tuple]:
+    cur.execute(
+        """
         SELECT
             c.relname AS table_name,
             c.reltuples::BIGINT AS est_rows,
@@ -44,17 +50,14 @@ def extract_features(conn_str):
         FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE c.relkind = 'r';
-    """)
-    tables = cur.fetchall()
-    features['tables'] = []
-    # for t in tables:
-    #     features['tables'].append({
-    #         'table': t[0],
-    #         'est_rows': t[1]
-    #     })
+        """
+    )
+    return cur.fetchall()
 
-    # Column-level features from pg_stats
-    cur.execute("""
+
+def _fetch_columns_stats(cur) -> List[Tuple]:
+    cur.execute(
+        """
         SELECT
             tablename,
             attname,
@@ -65,20 +68,14 @@ def extract_features(conn_str):
             histogram_bounds
         FROM pg_stats
         WHERE schemaname NOT IN ('pg_catalog', 'information_schema');
-    """)
-    cols = cur.fetchall()
-    # features['columns'] = []
-    # for c in cols:
-    #     features['columns'].append({
-    #         'table': c[0],
-    #         'column': c[1],
-    #         'n_distinct': c[3]
-    #     })
+        """
+    )
+    return cur.fetchall()
 
-    # -------------------------
-    # 3. Index Features
-    # -------------------------
-    cur.execute("""
+
+def _fetch_indexes(cur) -> List[Tuple]:
+    cur.execute(
+        """
         SELECT
             t.relname AS table_name,
             i.relname AS index_name,
@@ -91,59 +88,189 @@ def extract_features(conn_str):
         JOIN pg_attribute a ON a.attrelid = t.oid
                           AND a.attnum = ANY(ix.indkey)
         WHERE t.relkind = 'r';
-    """)
-    indexes = cur.fetchall()
-    # features['indexes'] = []
-    # for idx in indexes:
-    #     features['indexes'].append({
-    #         'table': idx[0],
-    #         'index': idx[1]
-    #     })
+        """
+    )
+    return cur.fetchall()
 
-    for t in tables:
-        table_name = t[0]
-        est_rows = t[1]
 
-        # 列信息
-        table_cols = [c for c in cols if c[0] == table_name]
-        columns = {c[1]: {'n_distinct': c[3]} for c in table_cols}  # column_name -> {n_distinct: value}
+def _fetch_index_usage(cur) -> List[Tuple]:
+    # Optional: index usage stats (standard view)
+    cur.execute(
+        """
+        SELECT
+            c.relname AS table_name,
+            s.indexrelname AS index_name,
+            s.idx_scan,
+            s.idx_tup_read,
+            s.idx_tup_fetch
+        FROM pg_stat_user_indexes s
+        JOIN pg_class c ON s.relid = c.oid;
+        """
+    )
+    return cur.fetchall()
 
-        # 索引信息（去重）
-        table_indexes = {idx[1] for idx in indexes if idx[0] == table_name}
 
-        features['tables'].append({
-            'table': table_name,
-            'est_rows': est_rows,
-            'columns': columns,          # {column_name: {'n_distinct': value}}
-            'indexes': list(table_indexes)  # 去重索引名列表
-        })
-
-    # -------------------------
-    # 4. Query-Access Features (need pg_stat_statements)
-    # -------------------------
-    cur.execute("""
+def _fetch_top_queries(cur, limit: int = 100) -> List[Tuple]:
+    cur.execute(
+        """
         SELECT query, calls, rows, total_exec_time
         FROM pg_stat_statements
         ORDER BY total_exec_time DESC
-        LIMIT 100;
-    """)
-    queries = cur.fetchall()
-    features['queries'] = []
-    for q in queries:
-        features['queries'].append({
-            'query': q[0],
-            'exec_time_ms': q[3]
-        })
+        LIMIT %s;
+        """,
+        (limit,),
+    )
+    return cur.fetchall()
 
-    cur.close()
-    conn.close()
 
-    return features
+def extract_features_indexes_recommendation(conn_str: str) -> Dict[str, Any]:
+    conn = psycopg2.connect(conn_str)
+    cur = conn.cursor()
+    try:
+        tables = _fetch_tables(cur)
+        cols = _fetch_columns_stats(cur)
+        indexes = _fetch_indexes(cur)
+        usage = _fetch_index_usage(cur)
+
+        # Build per-table summary focused on schema + index signals
+        table_features = []
+        for t in tables:
+            table_name = t[0]
+            est_rows = t[1]
+            table_cols = [c for c in cols if c[0] == table_name]
+            columns = {c[1]: {'n_distinct': c[3], 'null_frac': c[2], 'avg_width': c[4]} for c in table_cols}
+            table_indexes = {idx[1] for idx in indexes if idx[0] == table_name}
+            index_usage = [
+                {
+                    'index': u[1],
+                    'idx_scan': u[2],
+                    'idx_tup_read': u[3],
+                    'idx_tup_fetch': u[4],
+                }
+                for u in usage if u[0] == table_name
+            ]
+            table_features.append({
+                'table': table_name,
+                'est_rows': est_rows,
+                'columns': columns,
+                'indexes': sorted(list(table_indexes)),
+                'index_usage': index_usage,
+            })
+
+        return {
+            'task': 'indexes_recommendation',
+            'tables': table_features,
+        }
+    finally:
+        cur.close()
+        conn.close()
+
+
+def extract_features_materialised_views_recommendation(conn_str: str) -> Dict[str, Any]:
+    conn = psycopg2.connect(conn_str)
+    cur = conn.cursor()
+    try:
+        tables = _fetch_tables(cur)
+        queries = _fetch_top_queries(cur, limit=100)
+
+        tables_overview = [
+            {
+                'table': t[0],
+                'est_rows': t[1],
+                'pages': t[2],
+                'total_bytes': t[3],
+                'schema': t[4],
+            }
+            for t in tables
+        ]
+
+        top_queries = [
+            {'query': q[0], 'calls': q[1], 'rows': q[2], 'total_exec_time_ms': q[3]}
+            for q in queries
+        ]
+
+        return {
+            'task': 'materialised_views_recommendation',
+            'tables_overview': tables_overview,
+            'top_queries': top_queries,
+        }
+    finally:
+        cur.close()
+        conn.close()
+
+
+def extract_features_knob_tuning(conn_str: str) -> Dict[str, Any]:
+    conn = psycopg2.connect(conn_str)
+    cur = conn.cursor()
+    try:
+        exec_stats = _fetch_db_exec_stats(cur)
+        return {
+            'task': 'knob_tuning',
+            'execution': exec_stats,
+        }
+    finally:
+        cur.close()
+        conn.close()
+
+
+def extract_features_optimization_plan_review(conn_str: str) -> Dict[str, Any]:
+    conn = psycopg2.connect(conn_str)
+    cur = conn.cursor()
+    try:
+        queries = _fetch_top_queries(cur, limit=100)
+        top_queries = [
+            {
+                'query': q[0],
+                'calls': q[1],
+                'rows': q[2],
+                'total_exec_time_ms': q[3],
+            }
+            for q in queries
+        ]
+        return {
+            'task': 'optimization_plan_review',
+            'top_queries': top_queries,
+        }
+    finally:
+        cur.close()
+        conn.close()
+
+
+# -----------------------------
+# Public dispatcher
+# -----------------------------
+
+_TASK_IMPL = {
+    'indexes_recommendation': extract_features_indexes_recommendation,
+    'indexes recommendation': extract_features_indexes_recommendation,
+    'materialised_views_recommendation': extract_features_materialised_views_recommendation,
+    'materialised views recommendation': extract_features_materialised_views_recommendation,
+    'knob_tuning': extract_features_knob_tuning,
+    'knob tuning': extract_features_knob_tuning,
+    'optimization_plan_review': extract_features_optimization_plan_review,
+    'optimization plan review': extract_features_optimization_plan_review,
+}
+
+
+def extract_features(conn_str: str, task: str) -> Dict[str, Any]:
+    key = task.strip().lower()
+    func = _TASK_IMPL.get(key)
+    if func is None:
+        raise ValueError(f"Unknown task '{task}'. Supported: {sorted(_TASK_IMPL.keys())}")
+    return func(conn_str)
 
 
 if __name__ == "__main__":
     conn_str = "dbname= user= password= host= port=5432"
-    task = ["indexes_recommendation", "materialised_views_recommendation", "knob_tuning", "optimization_plan_review"]
-    feats = extract_features(conn_str)
-    with open("{task}_features.json", "w", encoding="utf-8") as f:
-        json.dump(feats, f, ensure_ascii=False, indent=2)
+    tasks = [
+        "indexes_recommendation",
+        "materialised_views_recommendation",
+        "knob_tuning",
+        "optimization_plan_review",
+    ]
+    for t in tasks:
+        feats = extract_features(conn_str, t)
+        outfile = f"{t.replace(' ', '_')}_features.json"
+        with open(outfile, "w", encoding="utf-8") as f:
+            json.dump(feats, f, ensure_ascii=False, indent=2)
+

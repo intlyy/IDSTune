@@ -71,6 +71,64 @@ current_indexes = """
 }
 """
 
+
+def _build_pg_conn_str() -> str:
+    cfg = configparser.ConfigParser()
+    # config.ini is one level up from this file
+    cfg.read(os.path.join(os.path.dirname(__file__), '..', 'config.ini'), encoding='utf-8')
+    section = 'configuration recommender'
+    host = cfg.get(section, 'PG_Host', fallback='')
+    port = cfg.get(section, 'PG_Port', fallback='5432')
+    user = cfg.get(section, 'PG_User', fallback='postgres')
+    password = cfg.get(section, 'PG_Password', fallback='')
+    dbname = cfg.get(section, 'PG_DB', fallback='postgres')
+    if not host:
+        raise ValueError("Missing PG_Host in config.ini [configuration recommender]")
+    return f"host={host} port={port} user={user} password={password} dbname={dbname}"
+
+
+def refresh_context() -> Dict[str, Any]:
+    """
+    Re-extract features for all tasks and refresh in-memory contexts.
+    Returns a dict with status info per task.
+    """
+    global index_context, matview_context, knob_context, review_context
+
+    # Load extraction function dynamically to avoid package path issues
+    gf_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'workload_compression', 'get_features.py'))
+    spec = importlib.util.spec_from_file_location("get_features_module", gf_path)
+    if spec is None or spec.loader is None:
+        raise ImportError("Unable to load workload_compression/get_features.py")
+    get_features_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(get_features_module)  # type: ignore[attr-defined]
+
+    conn_str = _build_pg_conn_str()
+
+    results: Dict[str, Any] = {}
+    out_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'workload_compression'))
+
+    for task_name, var_name in tasks:
+        try:
+            feats = get_features_module.extract_features(conn_str, task_name)  # type: ignore[attr-defined]
+            out_path = os.path.join(out_dir, f"{task_name}_features.json")
+            with open(out_path, 'w', encoding='utf-8') as f:
+                json.dump(feats, f, ensure_ascii=False, indent=2)
+
+            content = json.dumps(feats, ensure_ascii=False, indent=2)
+            if var_name == "index_context":
+                index_context = content
+            elif var_name == "matview_context":
+                matview_context = content
+            elif var_name == "knob_context":
+                knob_context = content
+            elif var_name == "review_context":
+                review_context = content
+            results[task_name] = {"ok": True, "path": out_path}
+        except Exception as e:
+            results[task_name] = {"ok": False, "error": str(e)}
+
+    return results
+
 def get_question_analysis_prompt(question_domain):
     question_analyzer = f"You are an experienced database administrators, skilled in database {question_domain}. " 
     if question_domain == 'materialised views recommendation':
@@ -353,3 +411,8 @@ def get_search_prompt_on(domain):
     }}
     """.format(domain = domain, context=domain_context)
     return search_prompt,prompt
+import os
+import json
+import configparser
+import importlib.util
+from typing import Dict, Any

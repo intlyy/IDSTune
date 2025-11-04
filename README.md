@@ -35,7 +35,7 @@ In our experiments,  We conduct experiments on PostgreSQL 15.1.
 4. Download and install `pg_stat_statements` extension.
    1. Add or ensure the following line is present in PostgreSQL configuration file (`postgresql.conf`):
    ```conf
-   shared_preload_libraries = 'pg_stat_statements,pg_stat_user_indexes'
+   shared_preload_libraries = 'pg_stat_statements'
    ```
    2. Install the extension.
    ```shell

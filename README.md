@@ -72,7 +72,7 @@ Follow the instructions of https://github.com/gregrahn/join-order-benchmark to l
 Follow the instructions of https://www.tpc.org/default5.asp to prepare TPC benchmarks.
 
 ## Quick Start
-1. Modify related settings (e.g., API key, benchmark, DB login info)
+1. Modify related settings (e.g., API key, benchmark, DB login info...) in `config.ini`
 2. Execute Phase I: workload compression to obtain selected features.
     ```shell
     cd ./workload_compression
@@ -88,5 +88,6 @@ Follow the instructions of https://www.tpc.org/default5.asp to prepare TPC bench
    ``` 
 3. Execute Phase II: configuration recommendation to obtain optimal configurations.
     ```shell
+    cd ../configuration_recommendation
     ./configuration_recommendation/optimize.py
    ``` 

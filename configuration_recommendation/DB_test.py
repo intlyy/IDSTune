@@ -7,316 +7,265 @@ import time
 import re
 import paramiko
 import configparser
+import subprocess
+from typing import Dict, Any, List, Optional
+
+import psycopg2
+from psycopg2 import sql
+
+
 
 config = configparser.ConfigParser()
-config.read('./config.ini')
+config.read('../config.ini')
 
-db_ip = config['configuration recommender']['DB_IP']
-ip_password = config['configuration recommender']['DB_IP_Password']
-config = {
-    'user': config['configuration recommender']['DB_User'],       
-    'password': config['configuration recommender']['DB_Password'],   
-    'host': config['configuration recommender']['DB_Host'],          
-    'database': config['configuration recommender']['DB_Name'],    
-    'port': config['configuration recommender']['DB_Port']
+def _load_pg_conn_params():
+    section = 'configuration recommender'
+    host =  config.get(section, 'PG_Host')
+    port =  config.get(section, 'PG_Port', fallback='5432')
+    user =  config.get(section, 'PG_User', fallback='postgres')
+    password =  config.get(section, 'PG_Password', fallback='')
+    database =  config.get(section, 'PG_DB',  fallback='postgres')
+    params = {'host': host, 'port': port, 'user': user, 'password': password, 'dbname': database}
+    return params
 
-}
+def _get_pg_connection():
+    params = _load_pg_conn_params()
+    conn = psycopg2.connect(**params)
+    conn.autocommit = True
+    return conn
 
-with open(config['knob selector']['candidate_knobs'], 'r') as f:
-    original = json.load(f)
-    original_keys = list(original.keys())
+def _sanitize_guc_name(name: str) -> str:
+    if not re.match(r'^[a-zA-Z0-9_.]+$', name):
+        raise ValueError(f'Invalid GUC parameter name: {name}')
+    return name
 
-with open(config['range pruner']['output_file'], 'r') as f:
-    selected_knobs = json.load(f)
-
-def get_current_metric():
-
-    conn = pymysql.connect(**config)
-    cursor = conn.cursor()
-
-    sql = "select name,count from information_schema.INNODB_METRICS where status = 'enabled'"
-    cursor.execute(sql)
-    result = cursor.fetchall() 
-    knobs = {}
-    for i in result:
-        #print(f"\"{i[0]}\" : {i[1]},")
-        knobs[i[0]] = int(i[1])
-    json_data = json.dumps(knobs, indent=4)
-    #print(json_data)
-    return knobs
-
-
-
-
-def get_knobs_detail():
-    f = open(config['range pruner']['output_file'], 'r')
-    content = json.load(f)
-    #content = set_expert_rule(content)
-
-    result = {}
-    count = 0
-    for i in content.keys():
-        result[i] = content[i]
-        count += 1
-    
-    return result
-
-def test_by_job(self,log_file):
-
-    temp_config = {}
-    knobs_detail = get_knobs_detail()
-    for key in knobs_detail.keys():
-        if key in knob.keys():
-            if knobs_detail[key]['type'] == 'integer':
-                temp_config[key] = knob.get(key) 
-            elif knobs_detail[key]['type'] == 'enum':
-                temp_config[key] = knobs_detail[key]['enum_values'][knob.get(key)]
-    
-    #set knobs and restart databases
-    set_knobs_command = '\cp {} {};'.format('/etc/my.cnf.bak' , '/etc/my.cnf')
-    for knobs in temp_config:
-        index = int(knobs.replace("knob", "")) - 1
-        knob_name = original_keys[index]
-        set_knobs_command += 'echo "{}"={} >> {};'.format(knob_name,temp_config[knobs],'/etc/my.cnf')
-    
-    head_command = 'sshpass -p {} ssh {} '.format(ip_password, db_ip)
-    set_knobs_command = head_command + '"' + set_knobs_command + '"' 
-    state = os.system(set_knobs_command)
-
-    time.sleep(10)
-
-    print("success set knobs")
-    #exit()
-
-    restart_knobs_command = head_command + '"service mysqld restart"' 
-    state = os.system(restart_knobs_command)
-
-    if state == 0:
-        print('database has been restarted')
-        conn = pymysql.connect(host=config.get('host'),
-                    user=config.get('mysql_user'),
-                    passwd=config.get('mysql_password'),
-                    db=config.get('database'),
-                    port=config.get('port'))
-        cursor = conn.cursor()
-        # query file
-        query_dir = ''
-        query_files = [os.path.join(query_dir, f) for f in os.listdir(query_dir) if f.endswith('.sql')]
-        total_time = 0
-        i = 0 
-        for i in range(1):
-            i = i+1
-            for query_file in query_files:
-                print(f"Running {query_file}")
-                elapsed_time = self.run_benchmark(query_file, cursor)
-                print(f"Time taken: {elapsed_time:.2f} seconds")
-                total_time += elapsed_time
-        
-        print(f"Total time for 5 runs: {total_time:.2f} seconds")
-
-        cursor.close()
-        conn.close()
-        return total_time
-    else:
-        print('database restarting failed')
-        return -1
-
-    
-def test_by_tpcc(knob):
-    #load knobs
-    temp_config = {}
-    knobs_detail = get_knobs_detail()
-    for key in knobs_detail.keys():
-        if key in knob.keys():
-            if knobs_detail[key]['type'] == 'integer':
-                temp_config[key] = knob.get(key) 
-            elif knobs_detail[key]['type'] == 'enum':
-                value = str(knob.get(key))
-                if value in knobs_detail[key]['enum_values']:
-                    temp_config[key] = value
-                else:
-                    # Handle case where value is not in the enum_values list
-                    print(f"Warning: {value} not found in enum values for {key}")
-    
-    #set knobs and restart databases
-    set_knobs_command = '\cp {} {};'.format('/etc/my.cnf.bak' , '/etc/my.cnf')
-    for knobs in temp_config:
-        set_knobs_command += 'echo "{}"={} >> {};'.format(knobs,temp_config[knobs],'/etc/my.cnf')
-    
-    head_command = 'sshpass -p {} ssh {} '.format(ip_password, db_ip)
-    set_knobs_command = head_command + '"' + set_knobs_command + '"' 
-    state = os.system(set_knobs_command)
-
-    time.sleep(10)
-
-    print("success set knobs")
-
-    restart_knobs_command = head_command + '"service mysqld restart"' 
-    state = os.system(restart_knobs_command)
-
-    if state == 0:
-        print('database has been restarted')
-        log_file = './configuration recommender/log/' + '{}.log'.format(int(time.time()))
-        ip = ''
-        username = ''
-        command = 'tpcc_start -S /var/lib/mysql/mysql.sock -d -u -p -w -c -r -l'
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        tps = 0
+def apply_pg_knobs(plan_knobs) -> List[str]:
+    if not plan_knobs:
+        return []
+    conn = _get_pg_connection()
+    cur = conn.cursor()
+    notes: List[str] = []
+    try:
+        for knob_name, meta in plan_knobs.items():
+            param = _sanitize_guc_name(knob_name)
+            value = meta.get('value') if isinstance(meta, dict) else meta
+            try:
+                cur.execute(f"ALTER SYSTEM SET {param} = %s", (str(value),))
+            except Exception:
+                try:
+                    cur.execute(f"SET {param} = %s", (str(value),))
+                    notes.append(f"SET applied for {param}; not persisted")
+                except Exception as e2:
+                    notes.append(f"Failed to set {param}: {e2}")
         try:
-
-            client.connect(hostname=ip, username=username, password=ip_password)
-            
-
-            stdin, stdout, stderr = client.exec_command(command)
-            
-            trx_values = []
-            
-            with open(log_file, 'a') as f: 
-
-                for line in stdout:
-                    line = line.strip()
-                    print(line, file=f)  
-
-                    match = re.search(r'trx:\s*(\d+)', line)
-                    if match:
-                        trx_values.append(int(match.group(1)))
-            
-
-                error = stderr.read().decode()
-                if error:
-                    print(f"Error: {error}", file=f)
-                
-                if trx_values:
-                    average = sum(trx_values) / len(trx_values)
-                    print(f"trx average: {average:.2f}", file=f)
-                    tps = average
-                else:
-                    print("Error! No trx values found in the log file.", file=f)
-                
+            cur.execute("SELECT pg_reload_conf();")
         except Exception as e:
-            print(f"Error: {e}")
-        finally:
-            client.close()
-        return tps
-    else:
-        print('database restarting failed')
-        return 0
-    
+            notes.append(f"pg_reload_conf failed: {e}")
+    finally:
+        cur.close()
+        conn.close()
+    return notes
 
-def test_by_sysbench(knob):
-    #load knobs
-    temp_config = {}
-    knobs_detail = get_knobs_detail()
-    for key in knobs_detail.keys():
-        if key in knob.keys():
-            if knobs_detail[key]['type'] == 'integer':
-                temp_config[key] = knob.get(key) 
-            elif knobs_detail[key]['type'] == 'enum':
-                value = str(knob.get(key))
-                if value in knobs_detail[key]['enum_values']:
-                    temp_config[key] = value
+def ensure_indexes(indexes: List[Dict[str, Any]]) -> List[str]:
+    if not indexes:
+        return []
+    conn = _get_pg_connection()
+    cur = conn.cursor()
+    created = []
+    try:
+        for idx in indexes:
+            name = idx.get('name')
+            table = idx.get('table')
+            cols = idx.get('columns', [])
+            if not name or not table or not cols:
+                continue
+            try:
+                if sql:
+                    cols_sql = sql.SQL(', ').join(sql.Identifier(c) for c in cols)
+                    cur.execute(sql.SQL("CREATE INDEX CONCURRENTLY IF NOT EXISTS {} ON {} ({})").format(
+                        sql.Identifier(name), sql.Identifier(table), cols_sql
+                    ))
                 else:
-                    # Handle case where value is not in the enum_values list
-                    print(f"Warning: {value} not found in enum values for {key}")
+                    cur.execute(f"CREATE INDEX CONCURRENTLY IF NOT EXISTS \"{name}\" ON \"{table}\" ({', '.join(cols)})")
+            except Exception:
+                # fallback without concurrently
+                if sql:
+                    cols_sql = sql.SQL(', ').join(sql.Identifier(c) for c in cols)
+                    cur.execute(sql.SQL("CREATE INDEX IF NOT EXISTS {} ON {} ({})").format(
+                        sql.Identifier(name), sql.Identifier(table), cols_sql
+                    ))
+                else:
+                    cur.execute(f"CREATE INDEX IF NOT EXISTS \"{name}\" ON \"{table}\" ({', '.join(cols)})")
+            created.append(name)
+    finally:
+        cur.close()
+        conn.close()
+    return created
+
+def ensure_matviews(matviews: List[Dict[str, Any]]) -> List[str]:
+    if not matviews:
+        return []
+    conn = _get_pg_connection()
+    cur = conn.cursor()
+    created = []
+    try:
+        for mv in matviews:
+            name = mv.get('name')
+            query = mv.get('query')
+            if not name or not query:
+                continue
+            try:
+                cur.execute("SELECT 1 FROM pg_matviews WHERE schemaname = current_schema() AND matviewname = %s", (name,))
+                exists = cur.fetchone() is not None
+            except Exception:
+                exists = False
+            if not exists:
+                cur.execute(query)
+                created.append(name)
+    finally:
+        cur.close()
+        conn.close()
+    return created
+
+def _collect_sql_files(query_dir: str) -> List[str]:
+    if not query_dir or not os.path.isdir(query_dir):
+        return []
+    return [os.path.join(query_dir, f) for f in os.listdir(query_dir) if f.endswith('.sql')]
+
+def _run_sql_file(conn, sql_path: str) -> float:
+    start = time.time()
+    with open(sql_path, 'r', encoding='utf-8') as f:
+        sql_text = f.read()
+    cur = conn.cursor()
+    try:
+        cur.execute(sql_text)
+    except Exception:
+        for stmt in [s.strip() for s in sql_text.split(';') if s.strip()]:
+            cur.execute(stmt)
+    finally:
+        cur.close()
+    end = time.time()
+    return end - start
+
+def test_by_job(plan: Dict[str, Any], query_dir: Optional[str] = None, log_file: Optional[str] = None) -> float:
+    # PostgreSQL version: apply knobs/indexes/matviews, then run SQL files in JOB workload
+    apply_pg_knobs(plan.get('knobs', {}) )
+    ensure_indexes(plan.get('indexes', []))
+    ensure_matviews(plan.get('matviews', []))
+
+    if not query_dir:
+        query_dir = os.getenv('JOB_QUERY_DIR', '')
+    query_files = _collect_sql_files(query_dir)
+    if not query_files:
+        print('No JOB queries found; please set query_dir or JOB_QUERY_DIR')
+        return -1.0
+
+    conn = _get_pg_connection()
+    total_time = 0.0
+    try:
+        for query_file in query_files:
+            elapsed_time = _run_sql_file(conn, query_file)
+            if log_file:
+                with open(log_file, 'a', encoding='utf-8') as f:
+                    f.write(f"{os.path.basename(query_file)}: {elapsed_time:.4f}s\n")
+            total_time += elapsed_time
+    finally:
+        conn.close()
+    return total_time
+
     
-    #set knobs and restart databases
-    set_knobs_command = '\cp {} {};'.format('/etc/my.cnf.bak' , '/etc/my.cnf')
-    for knobs in temp_config:
-        set_knobs_command += 'echo "{}"={} >> {};'.format(knobs,temp_config[knobs],'/etc/my.cnf')
+def test_by_tpcc(plan: Dict[str, Any],  clients: int = 32, duration: int = 120, report_interval: int = 60) -> float:
+    # Apply changes then run pgbench as a stand-in workload and parse TPS
+    apply_pg_knobs(plan.get('knobs', {}))
+    ensure_indexes(plan.get('indexes', []))
+    ensure_matviews(plan.get('matviews', []))
+
+    params = _load_pg_conn_params()
+    env = os.environ.copy()
+    if params.get('password'):
+        env['PGPASSWORD'] = params['password']
+    cmd = [
+        'pgbench', '-h', str(params['host']), '-p', str(params['port']), '-U', str(params['user']),
+        '-d', str(params['dbname']), '-c', str(clients), '-T', str(duration), '-P', str(report_interval)
+    ]
+    try:
+        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env, text=True, check=False)
+        output = proc.stdout
+        # Parse "tps = 123.45" line
+        tps_vals = [float(m.group(1)) for m in re.finditer(r"tps\s*=\s*([0-9.]+)", output)]
+        if tps_vals:
+            return float(sum(tps_vals) / len(tps_vals))
+        # Fallback: parse per second from transactions line
+        m = re.search(r"transactions:.*?\(([^)]+) per sec\.", output)
+        if m:
+            try:
+                return float(m.group(1).split()[0])
+            except Exception:
+                pass
+        return 0.0
+    except FileNotFoundError:
+        print('pgbench not found in PATH')
+        return 0.0
     
-    head_command = 'sshpass -p {} ssh {} '.format(ip_password, db_ip)
-    set_knobs_command = head_command + '"' + set_knobs_command + '"' 
-    state = os.system(set_knobs_command)
 
-    time.sleep(10)
+def test_by_sysbench(plan: Dict[str, Any], threads: int = 32, duration: int = 120, report_interval: int = 60, tables: int = 50, table_size: int = 1000000, log_file: Optional[str] = None) -> float:
+    # Apply changes then run sysbench (pgsql) and parse TPS
+    apply_pg_knobs(plan.get('knobs', {}))
+    ensure_indexes(plan.get('indexes', []))
+    ensure_matviews(plan.get('matviews', []))
 
-    print("success set knobs")
-    #exit()
-
-    restart_knobs_command = head_command + '"service mysqld restart"' 
-    state = os.system(restart_knobs_command)
-
-    if state == 0:
-        print('database has been restarted')
-        log_file = './configuration recommender/log/' + '{}.log'.format(int(time.time()))
-        command_run = 'sysbench --db-driver=mysql --threads=32 --mysql-host={} --mysql-port={} --mysql-user={} --mysql-password={} --mysql-db={} --tables=50 --table-size=1000000 --time=120 --report-interval=60 oltp_read_write run'.format(
-                            config.get('host'),
-                            config.get('port'),
-                            config.get('user'),
-                            config.get('password'),
-                            config.get('database')
-                            )
-        
-        os.system(command_run + ' > {} '.format(log_file))
-        
-        qps = sum([float(line.split()[8]) for line in open(log_file,'r').readlines() if 'qps' in line][-int(120/60):]) / (int(120/60))
-        tps = float(qps/20.0)
-        return tps
-    else:
-        print('database restarting failed')
-        return 0
+    params = _load_pg_conn_params()
+    command = [
+        'sysbench', '--db-driver=pgsql', f'--threads={threads}', f'--pgsql-host={params["host"]}', f'--pgsql-port={params["port"]}',
+        f'--pgsql-user={params["user"]}', f'--pgsql-password={params["password"]}', f'--pgsql-db={params["dbname"]}',
+        f'--tables={tables}', f'--table-size={table_size}', f'--time={duration}', f'--report-interval={report_interval}', 'oltp_read_write', 'run'
+    ]
+    try:
+        proc = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, check=False)
+        output = proc.stdout
+        if log_file:
+            with open(log_file, 'w', encoding='utf-8') as f:
+                f.write(output)
+        # Parse TPS from "transactions:" or per-interval lines
+        tps_vals = [float(m.group(1)) for m in re.finditer(r"transactions:\s*\d+\s*\(([^)]+) per sec\.", output)]
+        if tps_vals:
+            return float(sum(tps_vals) / len(tps_vals))
+        # Fallback: compute from qps if present (heuristic)
+        qps_vals = [float(m.group(1)) for m in re.finditer(r"queries:\s*\d+\s*\(([^)]+) per sec\.", output)]
+        if qps_vals:
+            qps = sum(qps_vals) / len(qps_vals)
+            return qps / 20.0
+        return 0.0
+    except FileNotFoundError:
+        print('sysbench not found in PATH')
+        return 0.0
 
 def unknown_benchmark(name):
     print(f"Unknown benchmark: {name}")
 
-def test_by_tpcds(self,log_file):
+def test_by_tpcds(plan: Dict[str, Any], query_dir: Optional[str] = None, log_file: Optional[str] = None) -> float:
+    # PostgreSQL version: apply knobs/indexes/matviews, then run TPC-DS SQL files
+    apply_pg_knobs(plan.get('knobs', {}))
+    ensure_indexes(plan.get('indexes', []))
+    ensure_matviews(plan.get('matviews', []))
 
-    temp_config = {}
-    knobs_detail = get_knobs_detail()
-    for key in knobs_detail.keys():
-        if key in knob.keys():
-            if knobs_detail[key]['type'] == 'integer':
-                temp_config[key] = knob.get(key) 
-            elif knobs_detail[key]['type'] == 'enum':
-                temp_config[key] = knobs_detail[key]['enum_values'][knob.get(key)]
-    
-    #set knobs and restart databases
-    set_knobs_command = '\cp {} {};'.format('/etc/my.cnf.bak' , '/etc/my.cnf')
-    for knobs in temp_config:
-        index = int(knobs.replace("knob", "")) - 1
-        knob_name = original_keys[index]
-        set_knobs_command += 'echo "{}"={} >> {};'.format(knob_name,temp_config[knobs],'/etc/my.cnf')
-    
-    head_command = 'sshpass -p {} ssh {} '.format(ip_password, db_ip)
-    set_knobs_command = head_command + '"' + set_knobs_command + '"' 
-    state = os.system(set_knobs_command)
+    if not query_dir:
+        query_dir = os.getenv('TPCDS_QUERY_DIR', '')
+    query_files = _collect_sql_files(query_dir)
+    if not query_files:
+        print('No TPC-DS queries found; please set query_dir or TPCDS_QUERY_DIR')
+        return -1.0
 
-    time.sleep(10)
-
-    print("success set knobs")
-    #exit()
-
-    restart_knobs_command = head_command + '"service mysqld restart"' 
-    state = os.system(restart_knobs_command)
-
-    if state == 0:
-        print('database has been restarted')
-        conn = pymysql.connect(host=config.get('host'),
-                    user=config.get('mysql_user'),
-                    passwd=config.get('mysql_password'),
-                    db=config.get('database'),
-                    port=config.get('port'))
-        cursor = conn.cursor()
-        # query file
-        query_dir = ''
-        query_files = [os.path.join(query_dir, f) for f in os.listdir(query_dir) if f.endswith('.sql')]
-        total_time = 0
-        i = 0 
-        for i in range(1):
-            i = i+1
-            for query_file in query_files:
-                print(f"Running {query_file}")
-                elapsed_time = self.run_benchmark(query_file, cursor)
-                print(f"Time taken: {elapsed_time:.2f} seconds")
-                total_time += elapsed_time
-        
-        print(f"Total time for 5 runs: {total_time:.2f} seconds")
-
-        cursor.close()
+    conn = _get_pg_connection()
+    total_time = 0.0
+    try:
+        for query_file in query_files:
+            elapsed_time = _run_sql_file(conn, query_file)
+            if log_file:
+                with open(log_file, 'a', encoding='utf-8') as f:
+                    f.write(f"{os.path.basename(query_file)}: {elapsed_time:.4f}s\n")
+            total_time += elapsed_time
+    finally:
         conn.close()
-        return total_time
-    else:
-        print('database restarting failed')
-        return -1
+    return total_time
 

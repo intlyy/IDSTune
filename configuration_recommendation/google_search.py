@@ -4,6 +4,10 @@ import pandas as pd
 from googleapiclient.discovery import build
 from urllib.request import urlopen
 from web_util import extract_text
+import configparser
+
+config = configparser.ConfigParser()
+config.read('../config.ini')
 
 def google_query(query_one, api_key, cse_id):
     """ Uses specified search engine to query_one, returns results. 
@@ -51,8 +55,8 @@ def search_lines(keyword, line_limit, api_key=None, cse_id=None):
     Returns:
         A list of strings (extracted text lines), capped by line_limit.
     """
-    api_key = api_key or os.getenv('GOOGLE_API_KEY')
-    cse_id = cse_id or os.getenv('GOOGLE_CSE_ID')
+    api_key = api_key or config['configuration recommender']['google_api_key'] 
+    cse_id = cse_id or config['configuration recommender']['google_cse_id']
     if not api_key or not cse_id:
         raise ValueError('Provide api_key and cse_id or set env GOOGLE_API_KEY and GOOGLE_CSE_ID')
 

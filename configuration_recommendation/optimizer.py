@@ -5,18 +5,22 @@ from prompt_generator import *
 import  time
 from DB_test import *
 from google_search import search_lines
+import configparser
 
-line_limit = 50
-search_mode= "Auto"
 
+config = configparser.ConfigParser()
+config.read('../config.ini')
+
+search_mode = config['configuration recommender']['search_mode']  # Auto, On, Off
+line_limit = int(config['configuration recommender']['line_limit'])  # number of lines
 # Initialize OpenAI client
 client = OpenAI(
-            api_key=, 
-            base_url=
+            api_key=config['LLM']['api_key'], 
+            base_url=config['LLM']['base_url']
         )
 
 
-def call_llm(prompt1, prompt2, model="gpt-4.1"):
+def call_llm(prompt1, prompt2, model=config['LLM']['model']):
 
     response = client.chat.completions.create(
         model=model,
@@ -174,7 +178,7 @@ def merge_plan(plan, rec):
     # exit(0)
 
 
-def run_framework(context, max_iters=10):
+def run_framework(max_iters):
     plan = {"knobs": {}, "indexes": [], "matviews": [], "history": []}
 
     print("Collecting initial recommendations...")
@@ -211,19 +215,23 @@ def run_framework(context, max_iters=10):
 
 
 if __name__ == "__main__":
-    benchmark = "TPC-DS"  # TPC-C, TPC-DS, Sysbench, JOB
-    total_time_limit = 3600  # seconds
+
+    benchmark = config['configuration recommender']['benchmark']  # TPC-C, TPC-DS, Sysbench, JOB
+    total_time_limit = config['configuration recommender']['total_time_limit']  # seconds
+    query_dir = config['configuration recommender'].get('query_dir', None)
+    log_file = config['configuration recommender'].get('log_file', None)
+
     start_time = time.time() 
     while True:
-      final_plan = run_framework()
+      final_plan = run_framework(config.getint('configuration recommender', 'max_iterations'))
       if benchmark == "TPC-C":
         result = test_by_tpcc(final_plan)
       elif benchmark == "TPC-DS":
-        result = test_by_tpcds(final_plan)
+        result = test_by_tpcds(final_plan,query_dir,log_file)
       elif benchmark == "Sysbench":
-        result = test_by_sysbench(final_plan)
+        result = test_by_sysbench(final_plan,log_file)
       elif benchmark == "JOB":
-        result = test_by_job(final_plan)
+        result = test_by_job(final_plan,query_dir,log_file)
       else:
         print("Unknown benchmark:", benchmark)
         break

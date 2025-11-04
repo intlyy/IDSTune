@@ -26,11 +26,22 @@ In our experiments,  We conduct experiments on PostgreSQL 15.1.
    ```
 
 3. Download and install PostgreSQL 15.1 and boost
-4. 
+ 
    ```shell
    sudo apt update
    sudo apt install postgresql-client-15 postgresql-15
    systemctl status postgresql
+   ```
+4. Download and install `pg_stat_statements` extension.
+   1. Add or ensure the following line is present in PostgreSQL configuration file (`postgresql.conf`):
+   ```conf
+   shared_preload_libraries = 'pg_stat_statements,pg_stat_user_indexes'
+   ```
+   2. Install the extension.
+   ```shell
+   sudo apt install postgresql-contrib-15
+   sudo -u postgres psql
+   CREATE EXTENSION pg_stat_statements;
    ```
 
 ## Workload Preparation 

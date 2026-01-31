@@ -1,1 +1,26 @@
+        prompt_get_question_analysis = """
+            Task Overview: 
+            Recommend optimal {domain} based on the workload characteristics in order to optimize the {db_metric} metric.
+            Workload and database kernel information: 
+            {environment}
+            Workload Features: {content}
+            Current Configuration: {Configuration}
+            External Information: {Ex_info}
+            Output Format:
+            - Output must be a valid JSON object.
+            - The object must contain:
+            - "items": a list of index recommendations. Each item must have:
+                - "name": the index name
+                - "table": the table where the index will be created
+                - "columns": the columns to be indexed
+                - "details": (optional) explanation of why this index helps
+            - "rationale": a short overall explanation for the recommendations.
 
+            Example:
+            {{
+            "items": [
+                {{"name": "idx_orders_customer", "table": "orders", "columns": ["customer_id"], "details": "Speeds up lookups by customer"}}
+            ],
+            "rationale": "Adding selective indexes reduces scan costs for common queries."
+            }}
+        """.format(question_domain = question_domain, db_metric = db_metric, environment=OLAP_environment, content=content, Configuration = Configuration, Ex_info = Ex_info)

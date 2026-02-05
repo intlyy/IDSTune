@@ -14,7 +14,7 @@ This is the source code to the paper **"IDSTune: A Multi-Agent Collaborative Fra
   - [Workload Preparation](#workload-preparation)
     - [SYSBENCH](#sysbench)
     - [Join-Order-Benchmark (JOB)](#join-order-benchmark-job)
-    - [TPCC and TPC-DS](#tpcc-and-tpc-ds)
+    - [TPCC and TPC-H](#tpcc-and-tpc-ds)
   - [Quick Start](#quick-start)
 
 ## Environment Installation

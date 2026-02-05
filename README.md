@@ -84,7 +84,7 @@ Download IMDB Data Set from http://homepages.cwi.nl/~boncz/job/imdb.tgz.
 
 Follow the instructions of https://github.com/gregrahn/join-order-benchmark to load data into PostgreSQL.
 
-### TPCC and TPC-DS
+### TPCC and TPC-H
 Follow the instructions of https://www.tpc.org/default5.asp to prepare TPC benchmarks.
 
 ## Quick Start

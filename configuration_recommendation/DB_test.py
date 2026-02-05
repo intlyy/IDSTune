@@ -9,7 +9,7 @@ import paramiko
 import configparser
 import subprocess
 from typing import Dict, Any, List, Optional
-
+import shutil
 import psycopg2
 from psycopg2 import sql
 
@@ -17,6 +17,138 @@ from psycopg2 import sql
 
 config = configparser.ConfigParser()
 config.read('../config.ini')
+
+def restore_postgres_config():
+    # --- Configuration paths ---
+    # Confirm these paths for your environment
+    PG_VERSION = "15"
+    CLUSTER_NAME = "main"
+    
+    BASE_DIR = f"/etc/postgresql/{PG_VERSION}/{CLUSTER_NAME}"
+    DATA_DIR = f"/var/lib/postgresql/{PG_VERSION}/{CLUSTER_NAME}"
+    
+    CONF_FILE = os.path.join(BASE_DIR, "postgresql.conf")
+    BACKUP_FILE = os.path.join(BASE_DIR, "postgresql.conf.bak")
+    AUTO_CONF_FILE = os.path.join(DATA_DIR, "postgresql.auto.conf")
+    
+    SERVICE_NAME = f"postgresql@{PG_VERSION}-{CLUSTER_NAME}.service"
+
+    print("[*] Starting PostgreSQL configuration restore...")
+
+    if os.geteuid() != 0:
+        print("[!] Error: this script requires root privileges to modify system configuration and restart the service.")
+        print("    Please run with 'sudo python3 your_script.py'.")
+        return False
+
+    if not os.path.exists(BACKUP_FILE):
+        print(f"[!] Error: backup file does not exist: {BACKUP_FILE}")
+        return False
+    
+    try:
+        print(f"[-] Restoring from backup: {CONF_FILE}")
+        shutil.copy2(BACKUP_FILE, CONF_FILE)
+        subprocess.run(["chown", "postgres:postgres", CONF_FILE], check=True)
+        
+    except Exception as e:
+        print(f"[!] Failed to restore configuration file: {e}")
+        return False
+
+    if os.path.exists(AUTO_CONF_FILE):
+        try:
+            print(f"[-] Detected auto.conf, removing: {AUTO_CONF_FILE}")
+            os.remove(AUTO_CONF_FILE)
+        except OSError as e:
+            print(f"[!] Unable to remove auto.conf: {e}")
+
+    print(f"[-] Restarting service: {SERVICE_NAME} ...")
+    try:
+        result = subprocess.run(
+            ["systemctl", "restart", SERVICE_NAME],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode == 0:
+            print("[+] Restore succeeded. Database restarted and running.")
+            return True
+        else:
+            print(f"[!] Restart failed. Systemd output:\n{result.stderr}")
+            return False
+            
+    except Exception as e:
+        print(f"[!] Failed to invoke systemctl: {e}")
+        return False
+
+def drop_all_materialized_views():
+    """
+    Drop all materialized views in the public schema.
+    """
+    print("[*] Scanning and dropping all materialized views...")
+    conn = _get_pg_connection()
+    with conn.cursor() as cur:
+        # Query all materialized views
+        cur.execute("""
+            SELECT schemaname, matviewname 
+            FROM pg_matviews 
+            WHERE schemaname = 'public';
+        """)
+        mvs = cur.fetchall()
+
+        if not mvs:
+            print("    - No materialized views found.")
+            return
+
+        for schema, name in mvs:
+            # Use CASCADE in case indexes depend on it
+            drop_query = f'DROP MATERIALIZED VIEW IF EXISTS "{schema}"."{name}" CASCADE;'
+            print(f"    - Dropping materialized view: {name}")
+            cur.execute(drop_query)
+        
+    conn.commit()
+    print("[+] All materialized views have been dropped.")
+
+def reset_indexes_to_original(allowed_indexes=ORIGINAL_INDEXES):
+    """
+    Drop all indexes except those in 'allowed_indexes' and primary keys.
+    
+    Args:
+        conn: database connection object
+        allowed_indexes: set of index names to keep
+    """
+    print("[*] Scanning and removing extra indexes...")
+    conn = _get_pg_connection()
+    dropped_count = 0
+    with conn.cursor() as cur:
+        # Query all indexes, excluding primary keys
+        # We usually do not want to drop primary keys because that would break table structure
+        cur.execute("""
+            SELECT 
+                schemaname, 
+                indexname 
+            FROM pg_indexes 
+            WHERE schemaname = 'public'
+            -- Simple filter for primary keys (usually ends with _pkey)
+            -- A stricter approach is to join pg_constraint, but this is often sufficient for tuning
+            AND indexname NOT LIKE '%_pkey' 
+            AND indexname NOT LIKE '%_unique';
+        """)
+        
+        current_indexes = cur.fetchall()
+
+        for schema, index_name in current_indexes:
+            # Drop the index if it is not in the allow list
+            if index_name not in allowed_indexes:
+                print(f"    - Dropping extra index: {index_name}")
+                cur.execute(f'DROP INDEX IF EXISTS "{schema}"."{index_name}";')
+                dropped_count += 1
+            else:
+                # This is an original index; keep it
+                pass
+
+    conn.commit()
+    if dropped_count == 0:
+        print("    - No extra indexes found; index state is clean.")
+    else:
+        print(f"[+] Dropped {dropped_count} extra indexes; restored to original state.")
 
 def _load_pg_conn_params():
     section = 'configuration recommender'
@@ -30,9 +162,32 @@ def _load_pg_conn_params():
 
 def _get_pg_connection():
     params = _load_pg_conn_params()
-    conn = psycopg2.connect(**params)
-    conn.autocommit = True
-    return conn
+    max_retries = 3
+    retry_delay = 2
+    
+    for attempt in range(max_retries):
+        try:
+            conn = psycopg2.connect(**params)
+            conn.autocommit = True
+            return conn
+        except psycopg2.OperationalError as e:
+            if attempt < max_retries - 1:
+                print(f"Database connection failed (attempt {attempt + 1}/{max_retries}): {e}")
+                print(f"Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+            else:
+                print(f"Failed to connect to database after {max_retries} attempts")
+                print(f"Attempting to restore database configuration...")
+                restore_postgres_config()
+                # Try one more connection after restore
+                try:
+                    conn = psycopg2.connect(**params)
+                    conn.autocommit = True
+                    print("Connection successful after restoring configuration")
+                    return conn
+                except psycopg2.OperationalError as e2:
+                    print(f"Connection still failed after restoration: {e2}")
+                    raise
 
 def _sanitize_guc_name(name: str) -> str:
     if not re.match(r'^[a-zA-Z0-9_.]+$', name):
@@ -61,6 +216,16 @@ def apply_pg_knobs(plan_knobs) -> List[str]:
             cur.execute("SELECT pg_reload_conf();")
         except Exception as e:
             notes.append(f"pg_reload_conf failed: {e}")
+
+        # Restart PostgreSQL to make all parameters take effect
+        try:
+            subprocess.run(["sudo", "systemctl", "restart", "postgresql"], check=True)
+            notes.append("PostgreSQL restarted successfully")
+            time.sleep(5)  # Wait for the database restart to complete
+        except subprocess.CalledProcessError as e:
+            error_msg = f"Failed to restart PostgreSQL: {e}"
+            notes.append(error_msg)
+            raise RuntimeError(error_msg)
     finally:
         cur.close()
         conn.close()
@@ -120,8 +285,17 @@ def ensure_matviews(matviews: List[Dict[str, Any]]) -> List[str]:
             except Exception:
                 exists = False
             if not exists:
-                cur.execute(query)
-                created.append(name)
+                # Ensure query is wrapped in CREATE MATERIALIZED VIEW statement
+                if not query.strip().upper().startswith('CREATE'):
+                    create_stmt = f"CREATE MATERIALIZED VIEW {name} AS {query}"
+                else:
+                    create_stmt = query
+                try:
+                    cur.execute(create_stmt)
+                    created.append(name)
+                    print(f"Created materialized view: {name}")
+                except Exception as e:
+                    print(f"Failed to create materialized view {name}: {e}")
     finally:
         cur.close()
         conn.close()

@@ -260,6 +260,16 @@ def extract_features(conn_str: str, task: str) -> Dict[str, Any]:
     return func(conn_str)
 
 
+def reset_pgstat_statements(conn_str: str) -> None:
+    conn = psycopg2.connect(conn_str)
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT pg_stat_statements_reset();")
+        conn.commit()
+    finally:
+        cur.close()
+        conn.close()
+
 if __name__ == "__main__":
     conn_str = "dbname= user= password= host= port=5432"
     tasks = [

@@ -1,0 +1,5 @@
+{
+  "system": "You are an experienced database administrator, skilled in database optimization.",
+  "user": "\n    Task Description:\n    You are given a candidate set of features that describe a database workload and\n    its environment, including query features, data features, and system features.\n    Your task is to select the most relevant features for {downstream_task}.\n    Candidate Features:\n    {features_all}\n    Output Format:\n    - Output must be a valid JSON object.\n    - Keep only the **feature names**, remove all values.\n    Example:\n    {{\n        \"Query Features\": [\"Query count\", \"Read/Write ratio\", ……],\n        \"Data Features\": [\"Data scale\", ……],\n        \"System Features\": [\"DB engine\", ……]\n    }}\n    Now, let's think step by step\n"
+}
+

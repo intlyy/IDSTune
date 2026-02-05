@@ -2,6 +2,11 @@
 
 This is the source code to the paper **"IDSTune: A Multi-Agent Collaborative Framework for Integrated Database System Tuning"**. Please refer to the paper for the experimental details.
 
+> **Note**: Prompt templates used in the paper are located in the `prompt_template/` folder, including:
+> - `Prompt_Feature_Selection`: Feature selection prompts
+> - `Prompt_Specialist_Agent`: Specialist agent prompts (Knob Tuner, Index Recommender, MatView Recommender)
+> - `Prompt_Supervisor_Agent`: Supervisor agent consensus prompts
+
 ## Table of Content
 - [IDSTune: A Multi-Agent Collaborative Framework for Integrated Database System Tuning](#idstune-a-multi-agent-collaborative-framework-for-integrated-database-system-tuning)
   - [Table of Content](#table-of-content)

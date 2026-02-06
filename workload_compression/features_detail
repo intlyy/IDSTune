@@ -1,0 +1,313 @@
+{
+  "QueryFeatures": {
+    "description": "Features describing the characteristics of SQL statements and workload behavior.",
+    "WorkloadLevel": [
+      {
+        "name": "query_count",
+        "semantics": "Total number of queries in the workload window."
+      },
+      {
+        "name": "read_write_ratio",
+        "semantics": "Ratio of read-only queries to write queries."
+      },
+      {
+        "name": "workload_scale",
+        "semantics": "Logical or physical size of the workload, such as total scanned rows or bytes."
+      },
+      {
+        "name": "average_queries_per_transaction",
+        "semantics": "Average number of SQL statements within a transaction."
+      },
+      {
+        "name": "concurrency_level",
+        "semantics": "Average or peak number of concurrent queries."
+      }
+    ],
+    "QuerySemantic": [
+      {
+        "name": "average_tables_per_query",
+        "semantics": "Average number of tables referenced in each query."
+      },
+      {
+        "name": "average_joins_per_query",
+        "semantics": "Average number of join operations per query."
+      },
+      {
+        "name": "join_type_distribution",
+        "semantics": "Distribution of join types such as inner, outer, and semi-joins."
+      },
+      {
+        "name": "average_logical_predicates_per_clause",
+        "semantics": "Average number of logical predicates in WHERE or HAVING clauses."
+      },
+      {
+        "name": "predicate_type_distribution",
+        "semantics": "Distribution of predicate types such as equality, range, IN, and LIKE."
+      },
+      {
+        "name": "average_aggregation_functions_per_query",
+        "semantics": "Average number of aggregation functions used per query."
+      },
+      {
+        "name": "average_group_by_operations_per_query",
+        "semantics": "Average number of GROUP BY clauses per query."
+      },
+      {
+        "name": "average_projected_attributes",
+        "semantics": "Average number of selected attributes in the query result."
+      },
+      {
+        "name": "order_by_ratio",
+        "semantics": "Fraction of queries containing ORDER BY clauses."
+      },
+      {
+        "name": "sort_direction_ratio",
+        "semantics": "Ratio of ascending to descending sort operations."
+      },
+      {
+        "name": "subquery_ratio",
+        "semantics": "Fraction of queries containing nested or correlated subqueries."
+      }
+    ],
+    "QueryCostAndExecution": [
+      {
+        "name": "estimated_query_cost",
+        "semantics": "Cost estimated by the query optimizer."
+      },
+      {
+        "name": "estimated_plan_depth",
+        "semantics": "Depth of the query execution plan tree."
+      },
+      {
+        "name": "estimated_rows_processed",
+        "semantics": "Estimated number of rows scanned or joined during execution."
+      },
+      {
+        "name": "operator_cost_distribution",
+        "semantics": "Relative cost contribution of scan, join, sort, and aggregation operators."
+      },
+      {
+        "name": "normalized_query_text",
+        "semantics": "Canonicalized SQL text capturing query semantics."
+      }
+    ]
+  },
+
+  "DataFeatures": {
+    "description": "Features capturing schema structure, data distribution, and physical storage properties.",
+    "TableLevel": [
+      {
+        "name": "table_name",
+        "semantics": "Logical identifier of the table."
+      },
+      {
+        "name": "estimated_row_count",
+        "semantics": "Estimated number of rows in the table."
+      },
+      {
+        "name": "table_size",
+        "semantics": "Physical storage footprint of the table in bytes or pages."
+      },
+      {
+        "name": "average_row_width",
+        "semantics": "Average size of a tuple in the table."
+      },
+      {
+        "name": "table_access_frequency",
+        "semantics": "Fraction of queries referencing the table."
+      },
+      {
+        "name": "sequential_scan_ratio",
+        "semantics": "Proportion of table accesses using sequential scans."
+      },
+      {
+        "name": "index_scan_ratio",
+        "semantics": "Proportion of table accesses using index scans."
+      }
+    ],
+    "ColumnLevel": [
+      {
+        "name": "column_name",
+        "semantics": "Identifier of the column."
+      },
+      {
+        "name": "column_data_type",
+        "semantics": "Data type of the column."
+      },
+      {
+        "name": "estimated_column_cardinality",
+        "semantics": "Number of distinct values in the column."
+      },
+      {
+        "name": "null_fraction",
+        "semantics": "Proportion of NULL values in the column."
+      },
+      {
+        "name": "average_column_width",
+        "semantics": "Average storage size of column values."
+      },
+      {
+        "name": "column_distribution",
+        "semantics": "Statistical distribution of column values, such as histograms or most common values."
+      },
+      {
+        "name": "column_access_frequency",
+        "semantics": "Fraction of queries referencing the column."
+      },
+      {
+        "name": "column_operator_type_distribution",
+        "semantics": "Distribution of how the column is used, such as filtering, joining, aggregation, or grouping."
+      },
+      {
+        "name": "estimated_column_utility",
+        "semantics": "Estimated importance of the column for query performance."
+      }
+    ],
+    "IndexLevel": [
+      {
+        "name": "index_existence",
+        "semantics": "Whether an index exists on the column or column set."
+      },
+      {
+        "name": "index_type",
+        "semantics": "Type of the index, such as B-tree or hash."
+      },
+      {
+        "name": "index_uniqueness",
+        "semantics": "Whether the index enforces uniqueness or primary key constraints."
+      },
+      {
+        "name": "indexed_column_count",
+        "semantics": "Number of columns included in the index."
+      },
+      {
+        "name": "index_access_frequency",
+        "semantics": "How often the index is used by queries."
+      },
+      {
+        "name": "index_selectivity",
+        "semantics": "Effectiveness of the index in filtering rows."
+      }
+    ],
+    "ViewLevel": [
+    {
+      "name": "view_name",
+      "semantics": "Logical identifier of the view or materialized view."
+    },
+    {
+      "name": "view_type",
+      "semantics": "Type of the view, such as logical view or materialized view."
+    },
+    {
+      "name": "base_table_count",
+      "semantics": "Number of base tables referenced by the view definition."
+    },
+    {
+      "name": "view_definition_complexity",
+      "semantics": "Structural complexity of the view definition, such as number of joins, aggregations, and nested subqueries."
+    },
+    {
+      "name": "estimated_view_rows",
+      "semantics": "Estimated number of rows produced by the view."
+    },
+    {
+      "name": "view_storage_size",
+      "semantics": "Physical storage size of the materialized view, if applicable."
+    },
+    {
+      "name": "view_access_frequency",
+      "semantics": "Fraction of queries referencing the view."
+    },
+    {
+      "name": "view_rewrite_usage",
+      "semantics": "Whether the optimizer rewrites queries to use the view or materialized view."
+    },
+    {
+      "name": "view_refresh_cost",
+      "semantics": "Estimated cost of refreshing the materialized view."
+    },
+    {
+      "name": "view_refresh_frequency",
+      "semantics": "How often the materialized view is refreshed."
+    }
+  ]
+  },
+
+  "SystemFeatures": {
+    "description": "Features reflecting DBMS configuration and runtime environment.",
+    "StaticConfiguration": [
+      {
+        "name": "dbms_engine",
+        "semantics": "Type of database management system."
+      },
+      {
+        "name": "cpu_core_count",
+        "semantics": "Number of available CPU cores."
+      },
+      {
+        "name": "memory_size",
+        "semantics": "Total available system memory."
+      },
+      {
+        "name": "storage_type",
+        "semantics": "Underlying storage type such as HDD or SSD."
+      },
+      {
+        "name": "buffer_pool_size",
+        "semantics": "Memory allocated for caching data pages."
+      },
+      {
+        "name": "parallelism_configuration",
+        "semantics": "Maximum degree of parallel execution supported by the system."
+      }
+    ],
+    "DynamicMetrics": [
+      {
+        "name": "cpu_utilization",
+        "semantics": "Percentage of CPU usage."
+      },
+      {
+        "name": "memory_utilization",
+        "semantics": "Fraction of memory currently in use."
+      },
+      {
+        "name": "buffer_pool_hit_ratio",
+        "semantics": "Proportion of data accesses served from memory."
+      },
+      {
+        "name": "disk_io_throughput",
+        "semantics": "Disk read and write bandwidth."
+      },
+      {
+        "name": "io_latency",
+        "semantics": "Average disk access latency."
+      },
+      {
+        "name": "lock_contention_duration",
+        "semantics": "Time spent waiting for locks."
+      }
+    ],
+    "ExecutionStatistics": [
+      {
+        "name": "latency_distribution",
+        "semantics": "Statistical distribution of query execution times."
+      },
+      {
+        "name": "transaction_throughput",
+        "semantics": "Number of transactions completed per second."
+      },
+      {
+        "name": "result_set_cardinality",
+        "semantics": "Number of rows returned by queries."
+      },
+      {
+        "name": "tuples_read_written",
+        "semantics": "Actual number of rows read or written during execution."
+      },
+      {
+        "name": "blocks_read_hit",
+        "semantics": "Number of disk blocks read versus buffer hits."
+      }
+    ]
+  }
+}

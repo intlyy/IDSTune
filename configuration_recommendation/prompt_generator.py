@@ -57,11 +57,22 @@ _SPECIALIST_TEMPLATES = _load_prompt_json(_SPECIALIST_PROMPT_PATH, "Prompt_Speci
 _SUPERVISOR_TEMPLATES = _load_prompt_json(_SUPERVISOR_PROMPT_PATH, "Prompt_Supervisor_Agent")
 
 
-def _get_specialist_template(question_domain: str) -> str:
+def _get_specialist_template(question_domain: str, template_kind: str = "analysis") -> str:
     try:
-        return _SPECIALIST_TEMPLATES[question_domain]
+        entry = _SPECIALIST_TEMPLATES[question_domain]
     except KeyError as exc:
         raise NotImplementedError from exc
+
+    if isinstance(entry, dict):
+        try:
+            return entry[template_kind]
+        except KeyError as exc:
+            raise NotImplementedError from exc
+
+    if template_kind == "analysis":
+        return entry
+
+    raise NotImplementedError
 
 
 def _get_supervisor_template() -> str:
@@ -177,7 +188,7 @@ def get_question_analysis_prompt(question_domain, search_result="None", current_
         else:
             domain_config = "Default"
 
-    template = _get_specialist_template(question_domain)
+    template = _get_specialist_template(question_domain, template_kind="analysis")
     prompt_get_question_analysis = template.format(
         question_domain=question_domain,
         db_metric=db_metric,
@@ -253,99 +264,16 @@ def revision_prompt(question_domain, comments, original_recommendation, search_r
             domain_config = json.dumps(current_plan.get('matviews', []), ensure_ascii=False, indent=2) or "Default"
         else:
             domain_config = "Default"
-    if question_domain == 'materialised views recommendation':
-        prompt_get_question_analysis = """
-            Task Overview: 
-            Revise your previous recommendations on materialised views in order to optimize the {db_metric} metric. 
-            Carefully read the ControlAgent’s feedback. Modify your previous recommendations accordingly to address the raised concerns.
-            Here is the feedback from the ControlAgent:
-            {comments}
-            Here is your original recommendation report:
-            {original_recommendation}
-            Workload Features: {content}
-            Extra info: {search_result}
-            Output Format:
-            - Output must be a valid JSON object.
-            - The object must contain:
-            - "items": a list of materialized view recommendations. Each item must have:
-                - "name": the materialized view name
-                - "query": the SQL query that defines the materialized view
-                - "details": (optional) explanation of why this materialized view helps
-            - "rationale": a short overall explanation for the recommendations.
-
-            Example:
-            {{
-            "items": [
-                {{"name": "mv_top_customers", "query": "SELECT customer_id, SUM(amount) FROM orders GROUP BY customer_id", "details": "Precomputes aggregation for top customers"}}
-            ],
-            "rationale": "Pre-aggregating common queries reduces repeated computation."
-            }}
-            Now, let's think step by step.
-        """.format(comments = comments, original_recommendation = original_recommendation, question_domain = question_domain, db_metric = db_metric,  content=domain_context, search_result=search_result)
-    elif question_domain == 'indexes recommendation':
-        prompt_get_question_analysis = """
-            Task Overview: 
-            Revise your previous recommendations on indexes in order to optimize the {db_metric} metric. 
-            Carefully read the ControlAgent’s feedback. Modify your previous recommendations accordingly to address the raised concerns.
-            Here is the feedback from the ControlAgent:
-            {comments}
-            Here is your original recommendation report:
-            {original_recommendation}
-            Workload Features: {content}
-            Extra info: {search_result}
-            Output Format:
-            - Output must be a valid JSON object.
-            - The object must contain:
-            - "items": a list of index recommendations. Each item must have:
-                - "name": the index name
-                - "table": the table where the index will be created
-                - "columns": the columns to be indexed
-                - "details": (optional) explanation of why this index helps
-            - "rationale": a short overall explanation for the recommendations.
-
-            Example:
-            {{
-            "items": [
-                {{"name": "idx_orders_customer", "table": "orders", "columns": ["customer_id"], "details": "Speeds up lookups by customer"}}
-            ],
-            "rationale": "Adding selective indexes reduces scan costs for common queries."
-            }}
-        """.format(comments = comments, original_recommendation = original_recommendation, question_domain = question_domain, db_metric = db_metric, content=domain_context, search_result=search_result)
-    elif question_domain =="knob tuning":
-        prompt_get_question_analysis = """
-            Task Overview: 
-            Revise your previous recommendations on knobs in order to optimize the {db_metric} metric. 
-            Carefully read the ControlAgent’s feedback. Modify your previous recommendations accordingly to address the raised concerns.
-            Here is the feedback from the ControlAgent:
-            {comments}
-            Here is your original recommendation report:
-            {original_recommendation}
-            Current Configuration:
-            {current_configuration}
-            Workload Features: {content}
-            Extra info: {search_result}
-            Output Format:
-            The generated configuration should be formatted as follows:
-            - Output must be a valid JSON object.
-            - The object must contain:
-            - "items": a list of parameter recommendations. Each item must have at least:
-                - "name": the parameter name
-                - "value": the suggested value
-                - "details": (optional) explanation of why this setting is recommended
-            - "rationale": a short overall explanation for the recommendations.
-
-            Example:
-            {{
-            "items": [
-                {{"name": "work_mem", "value": "512MB", "details": "Larger work_mem speeds up hash joins"}},
-                {{"name": "shared_buffers", "value": "4GB"}}
-            ],
-            "rationale": "Adjusted memory-related parameters for OLAP workload efficiency."
-            }}
-            Now, let's think step by step.
-        """.format(comments = comments, original_recommendation = original_recommendation, question_domain = question_domain, db_metric = db_metric, content=domain_context, current_configuration=domain_config, search_result=search_result)
-    else:
-        raise NotImplementedError
+    template = _get_specialist_template(question_domain, template_kind="revision")
+    prompt_get_question_analysis = template.format(
+        comments=comments,
+        original_recommendation=original_recommendation,
+        question_domain=question_domain,
+        db_metric=db_metric,
+        content=domain_context,
+        current_configuration=domain_config,
+        search_result=search_result,
+    )
     return question_analyzer, prompt_get_question_analysis
 
 def get_consensus_opinion_prompt(domain, syn_report):

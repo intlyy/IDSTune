@@ -5,7 +5,11 @@ This is the source code to the paper **"IDSTune: A Multi-Agent Collaborative Fra
 > **Note**: Prompt templates used in the paper are located in the `prompt_template/` folder, including:
 > - `Prompt_Feature_Selection`: Feature selection prompts
 > - `Prompt_Specialist_Agent`: Specialist agent prompts (Knob Tuner, Index Recommender, MatView Recommender)
-> - `Prompt_Supervisor_Agent`: Supervisor agent consensus prompts
+> - `Prompt_Supervisor_Agent`: Supervisor agent consensus prompts  
+>For better readability, we also provide corresponding PDF files for each prompt template:
+> - `Prompt_Feature_Selection.pdf`
+> - `Prompt_Specialist_Agent.pdf`
+> - `Prompt_Supervisor_Agent.pdf`
 
 ## Table of Content
 - [IDSTune: A Multi-Agent Collaborative Framework for Integrated Database System Tuning](#idstune-a-multi-agent-collaborative-framework-for-integrated-database-system-tuning)
@@ -15,6 +19,7 @@ This is the source code to the paper **"IDSTune: A Multi-Agent Collaborative Fra
     - [SYSBENCH](#sysbench)
     - [Join-Order-Benchmark (JOB)](#join-order-benchmark-job)
     - [TPCC and TPC-H](#tpcc-and-tpc-h)
+    - [Redbench](#redbench)
   - [Quick Start](#quick-start)
 
 ## Environment Installation

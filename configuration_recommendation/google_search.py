@@ -1,4 +1,6 @@
 import argparse
+import hashlib
+import json
 import os
 import pandas as pd
 from googleapiclient.discovery import build
@@ -43,6 +45,39 @@ def can_parse(result):
     """ Returns true iff the search result can be used. """
     return True if not '.pdf' in result['link'] else False
 
+
+def _resolve_cache_file(keyword, line_limit, cache_dir):
+    """Build a deterministic cache file path for a keyword and line limit."""
+    cache_key = f'{keyword}|{line_limit}'
+    file_name = hashlib.md5(cache_key.encode('utf-8')).hexdigest() + '.json'
+    return os.path.join(cache_dir, file_name)
+
+
+def _load_cached_lines(cache_file):
+    """Load cached lines if cache file exists and has valid format."""
+    if not os.path.exists(cache_file):
+        return None
+    try:
+        with open(cache_file, 'r', encoding='utf-8') as fp:
+            cached = json.load(fp)
+        if isinstance(cached, list):
+            print(f'Cache hit: {cache_file}')
+            return cached
+    except Exception as err:
+        print(f'Failed to load cache {cache_file}: {err}')
+    return None
+
+
+def _save_cached_lines(cache_file, lines):
+    """Persist lines to cache file."""
+    try:
+        os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+        with open(cache_file, 'w', encoding='utf-8') as fp:
+            json.dump(lines, fp, ensure_ascii=False)
+        print(f'Cache saved: {cache_file}')
+    except Exception as err:
+        print(f'Failed to save cache {cache_file}: {err}')
+
 def search_lines(keyword, line_limit, api_key=None, cse_id=None):
     """Search pages via Google CSE and return extracted text lines.
 
@@ -55,8 +90,19 @@ def search_lines(keyword, line_limit, api_key=None, cse_id=None):
     Returns:
         A list of strings (extracted text lines), capped by line_limit.
     """
-    api_key = api_key or config['configuration recommender']['google_api_key'] 
+    api_key = api_key or config['configuration recommender']['google_api_key']
     cse_id = cse_id or config['configuration recommender']['google_cse_id']
+    cache_dir = config['configuration recommender'].get('cache_dir', '').strip()
+    line_limit = int(line_limit)
+
+    if cache_dir:
+        cache_file = _resolve_cache_file(keyword, line_limit, cache_dir)
+        cached_lines = _load_cached_lines(cache_file)
+        if cached_lines is not None:
+            return cached_lines[:line_limit]
+    else:
+        cache_file = None
+
     if not api_key or not cse_id:
         raise ValueError('Provide api_key and cse_id or set env GOOGLE_API_KEY and GOOGLE_CSE_ID')
 
@@ -72,10 +118,15 @@ def search_lines(keyword, line_limit, api_key=None, cse_id=None):
             lines = get_web_text(url)
             for line in lines:
                 results.append(line)
-                if len(results) >= int(line_limit):
+                if len(results) >= line_limit:
+                    if cache_file:
+                        _save_cached_lines(cache_file, results)
                     return results
         else:
             print('Did not process document')
+
+    if cache_file:
+        _save_cached_lines(cache_file, results)
     return results
 
 

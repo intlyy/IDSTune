@@ -87,6 +87,10 @@ Follow the instructions of https://github.com/gregrahn/join-order-benchmark to l
 ### TPCC and TPC-H
 Follow the instructions of https://www.tpc.org/default5.asp to prepare TPC benchmarks.
 
+### Redbench
+Follow the instructions at https://github.com/DataManagementLab/Redbench/tree/main to prepare the Redbench benchmark. 
+We adopt the *Matching approach*, where the supporting benchmark is the JOB benchmark.
+
 ## Quick Start
 1. Modify related settings (e.g., API key, benchmark, DB login info...) in `config.ini`
 2. Execute Phase I: workload compression to obtain selected features.
